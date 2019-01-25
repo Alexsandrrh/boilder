@@ -66,6 +66,6 @@ gulp.task('watch', () => {
    gulp.watch(config.path.watchSass, gulp.series('sass'));
 });
 
-config.runner = gulp.series('clean', 'sass', 'images');
+gulp.task('build', gulp.series('clean', 'sass', 'images'));
 
-gulp.task('build',  argv.development ? gulp.series(config.runner, gulp.parallel('watch', 'server')) : config.runner);
+gulp.task('default',  argv.development ? gulp.series('build', gulp.parallel('watch', 'server')) : gulp.series('build'));
