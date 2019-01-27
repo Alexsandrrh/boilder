@@ -18,6 +18,11 @@ const imagemin = require('gulp-imagemin');
 const nodemon = require('gulp-nodemon');
 const concat = require('gulp-concat');
 const uglify = require('gulp-uglify');
+const named = require('vinyl-named');
+const webpack = require('webpack-stream');
+const htmlReplace = require('gulp-html-replace');
+const rename = require('gulp-rename');
+const htmlMin = require('gulp-htmlmin');
 
 
 // Set New Config
@@ -36,7 +41,14 @@ config.path.destImages = `${config.output}/img`;
 config.path.srcJs = `${config.context}/js/**/**/*.js`;
 config.path.watchJs = config.path.srcJs;
 config.path.destJs = `${config.output}/js`;
-
+// React
+config.path.srcReact = `${config.context}/react/index.js`;
+config.path.watchReact = `${config.context}/react/**/**/**/**/*.{js, jsx}`;
+config.path.destReact = config.path.destJs;
+// Html
+config.path.srcHtml = `${config.context}/templates/*.{html, pug, ejs, jade}`;
+config.path.watchHtml = `${config.context}/templates/**/**/*.{html, pug, ejs, jade}`;
+config.path.destHtml = `${config.output}`;
 
 // Gulp Tasks
 
@@ -54,6 +66,9 @@ gulp.task('sass', () => {
             cascade : false
         }))
         .pipe(If(!argv.development, cssnano()))
+        .pipe(If(!argv.development, rename({
+            suffix : '.min'
+        })))
         .pipe(sourcemaps.write('.'))
         .pipe(gulp.dest(config.path.destSass));
 });
@@ -74,8 +89,63 @@ gulp.task('js', () => {
        }))
        .pipe(concat('vendor.js'))
        .pipe(If(!argv.development, uglify()))
+       .pipe(If(!argv.development, rename({
+           suffix : '.min'
+       })))
        .pipe(sourcemaps.write('.'))
        .pipe(gulp.dest(config.path.destJs));
+});
+
+gulp.task('react', () => {
+    return gulp.src(config.path.srcReact)
+        .pipe(plumber())
+        .pipe(named(function() {
+            return 'bundle'
+        }))
+        .pipe(webpack({
+            mode : argv.development ? 'development' : 'production',
+            watch : false,
+            module: {
+                rules: [
+                    {
+                        test: /\.(js|jsx)$/,
+                        exclude: /node_modules/,
+                        use: {
+                            loader: "babel-loader",
+                            options: {
+                                "presets": ["@babel/preset-env", "@babel/preset-react"]
+                            }
+                        }
+                    }
+                ]
+            }
+        }))
+        .pipe(If(!argv.development, uglify()))
+        .pipe(If(!argv.development, rename({
+            suffix : '.min'
+        })))
+        .pipe(gulp.dest(config.path.destReact));
+});
+
+gulp.task('templates', () => {
+   return gulp.src('src/templates/index.html')
+       .pipe(plumber())
+       .pipe(htmlReplace({
+           css : {
+               src : argv.development ? 'css/main.css' : 'css/main.min.css',
+               tpl : '<link rel="stylesheet" type="text/css" href="%s">'
+           },
+           js: {
+               src: argv.development ? ["js/vendor.js", "js/bundle.js"] : ["js/vendor.min.js", "js/bundle.min.js"],
+               tpl: '<script type="text/javascript" src="%s"></script>'
+           },
+           react : {
+               src: null,
+               tpl : '<div id="layout"></div>'
+           }
+       }))
+       .pipe(If(!argv.development, htmlMin({ collapseWhitespace: true })))
+       .pipe(gulp.dest(config.path.destHtml));
 });
 
 gulp.task('server', function () {
@@ -86,8 +156,12 @@ gulp.task('server', function () {
 
 gulp.task('watch', () => {
    gulp.watch(config.path.watchSass, gulp.series('sass'));
+   gulp.watch(config.path.watchImages, gulp.series('images'));
+   gulp.watch(config.path.watchJs, gulp.series('js'));
+   gulp.watch(config.path.watchHtml, gulp.series('templates'));
+   gulp.watch(config.path.watchReact, gulp.series('react'));
 });
 
-gulp.task('build', gulp.series('clean', 'sass', 'js', 'images'));
+gulp.task('build', gulp.series('clean', 'sass', 'js', 'react', 'templates', 'images'));
 
 gulp.task('default',  argv.development ? gulp.series('build', gulp.parallel('watch', 'server')) : gulp.series('build'));
