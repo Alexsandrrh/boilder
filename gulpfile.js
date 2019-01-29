@@ -7,7 +7,6 @@ const del = require('del');
 const If = require('gulp-if');
 const plumber = require('gulp-plumber');
 const sourcemaps = require('gulp-sourcemaps');
-const babel = require('gulp-babel');
 const argv = require('yargs').argv;
 
 // Other Plugins
@@ -16,12 +15,10 @@ const autoprefixer = require('gulp-autoprefixer');
 const cssnano = require('gulp-cssnano');
 const imagemin = require('gulp-imagemin');
 const nodemon = require('gulp-nodemon');
-const concat = require('gulp-concat');
 const uglify = require('gulp-uglify');
 const named = require('vinyl-named');
 const webpack = require('webpack-stream');
 const htmlReplace = require('gulp-html-replace');
-const rename = require('gulp-rename');
 const htmlMin = require('gulp-htmlmin');
 
 
@@ -38,8 +35,8 @@ config.path.srcImages = `${config.output}/images/**/**/*.{png, jpeg, gif, jpg}`;
 config.path.watchImages = config.path.srcImages;
 config.path.destImages = `${config.output}/img`;
 // Js
-config.path.srcJs = `${config.context}/js/**/**/*.js`;
-config.path.watchJs = config.path.srcJs;
+config.path.srcJs = `${config.context}/js/index.js`;
+config.path.watchJs = `${config.context}/js/**/**/*.js`;
 config.path.destJs = `${config.output}/js`;
 // React
 config.path.srcReact = `${config.context}/react/index.js`;
@@ -51,25 +48,21 @@ config.path.watchHtml = `${config.context}/templates/**/**/*.{html, pug, ejs, ja
 config.path.destHtml = `${config.output}`;
 
 // Gulp Tasks
-
 gulp.task('clean', () => {
-   return del(config.output);
+    return del(config.output);
 });
 
 gulp.task('sass', () => {
     return gulp.src(config.path.srcSass)
         .pipe(plumber())
         .pipe(sass())
-        .pipe(sourcemaps.init())
+        .pipe(If(!argv.development, sourcemaps.init()))
         .pipe(autoprefixer({
             browsers : ["last 15 version", "> 1%", "ie 8", "ie 7"],
             cascade : false
         }))
         .pipe(If(!argv.development, cssnano()))
-        .pipe(If(!argv.development, rename({
-            suffix : '.min'
-        })))
-        .pipe(sourcemaps.write('.'))
+        .pipe(If(!argv.development, sourcemaps.write('.')))
         .pipe(gulp.dest(config.path.destSass));
 });
 
@@ -81,19 +74,31 @@ gulp.task('images', () => {
 });
 
 gulp.task('js', () => {
-   return gulp.src(config.path.srcJs)
-       .pipe(plumber())
-       .pipe(sourcemaps.init())
-       .pipe(babel({
-           presets: ['@babel/env']
-       }))
-       .pipe(concat('vendor.js'))
-       .pipe(If(!argv.development, uglify()))
-       .pipe(If(!argv.development, rename({
-           suffix : '.min'
-       })))
-       .pipe(sourcemaps.write('.'))
-       .pipe(gulp.dest(config.path.destJs));
+    return gulp.src(config.path.srcJs)
+        .pipe(plumber())
+        .pipe(named(function() {
+            return 'vendor';
+        }))
+        .pipe(webpack({
+            mode : argv.development ? 'development' : 'production',
+            watch : false,
+            module: {
+                rules: [
+                    {
+                        test: /\.js$/,
+                        exclude: /node_modules/,
+                        use: {
+                            loader: "babel-loader",
+                            options: {
+                                "presets": ["@babel/preset-env"]
+                            }
+                        }
+                    }
+                ]
+            }
+        }))
+        .pipe(If(!argv.development, uglify()))
+        .pipe(gulp.dest(config.path.destJs))
 });
 
 gulp.task('react', () => {
@@ -121,45 +126,42 @@ gulp.task('react', () => {
             }
         }))
         .pipe(If(!argv.development, uglify()))
-        .pipe(If(!argv.development, rename({
-            suffix : '.min'
-        })))
-        .pipe(gulp.dest(config.path.destReact));
+        .pipe(gulp.dest(config.path.destReact))
 });
 
 gulp.task('templates', () => {
-   return gulp.src('src/templates/index.html')
-       .pipe(plumber())
-       .pipe(htmlReplace({
-           css : {
-               src : argv.development ? 'css/main.css' : 'css/main.min.css',
-               tpl : '<link rel="stylesheet" type="text/css" href="%s">'
-           },
-           js: {
-               src: argv.development ? ["js/vendor.js", "js/bundle.js"] : ["js/vendor.min.js", "js/bundle.min.js"],
-               tpl: '<script type="text/javascript" src="%s"></script>'
-           },
-           react : {
-               src: null,
-               tpl : '<div id="layout"></div>'
-           }
-       }))
-       .pipe(If(!argv.development, htmlMin({ collapseWhitespace: true })))
-       .pipe(gulp.dest(config.path.destHtml));
+    return gulp.src('src/templates/index.html')
+        .pipe(plumber())
+        .pipe(htmlReplace({
+            css : {
+                src : argv.development ? 'css/main.css' : 'css/main.min.css',
+                tpl : '<link rel="stylesheet" type="text/css" href="%s">'
+            },
+            js: {
+                src: argv.development ? ["js/vendor.js", "js/bundle.js"] : ["js/vendor.min.js", "js/bundle.min.js"],
+                tpl: '<script type="text/javascript" src="%s"></script>'
+            },
+            react : {
+                src: null,
+                tpl : '<div class="header" id="header"></div><div id="layout"></div>'
+            }
+        }))
+        .pipe(If(!argv.development, htmlMin({ collapseWhitespace: true })))
+        .pipe(gulp.dest(config.path.destHtml));
 });
 
 gulp.task('server', function () {
-   return nodemon({
-       script: require('./package').main
-   });
+    return nodemon({
+        script: require('./package').main
+    });
 });
 
 gulp.task('watch', () => {
-   gulp.watch(config.path.watchSass, gulp.series('sass'));
-   gulp.watch(config.path.watchImages, gulp.series('images'));
-   gulp.watch(config.path.watchJs, gulp.series('js'));
-   gulp.watch(config.path.watchHtml, gulp.series('templates'));
-   gulp.watch(config.path.watchReact, gulp.series('react'));
+    gulp.watch(config.path.watchSass, gulp.series('sass'));
+    gulp.watch(config.path.watchImages, gulp.series('images'));
+    gulp.watch(config.path.watchJs, gulp.series('js'));
+    gulp.watch(config.path.watchHtml, gulp.series('templates'));
+    gulp.watch(config.path.watchReact, gulp.series('react'));
 });
 
 gulp.task('build', gulp.series('clean', 'sass', 'js', 'react', 'templates', 'images'));
